@@ -1,5 +1,5 @@
+rm(list = ls())
 library(dplyr)
-library(tidyr)
 load("RData/Summary.RData")
 
 # Table 1 ----
@@ -46,17 +46,17 @@ tab = summary.all %>%
   mutate(ratio = format(round(ESD / ASE, 3), nsmall = 3, digits = 4),
          TrueFam = factor(TrueFam, levels = c("Gumbel", "Clayton"))) %>%
   select(betaT, TrueFam, para, tau, nsamp, method, ratio) %>%
-  spread(key = "method", value = "ratio") %>%
+  tidyr::spread(key = "method", value = "ratio") %>%
   arrange(betaT, TrueFam, para, tau, nsamp) %>% 
   mutate(betaT = paste0("(1,", betaT, ")"))
 tab.MLE = tab %>% filter(betaT == "(1,0.5)") %>% 
   select(TrueFam, tau, nsamp, betaT, para, MLE) %>%
-  spread(key = "para", value = "MLE")
+  tidyr::spread(key = "para", value = "MLE")
 colnames(tab.MLE) = c("TrueFam", "tau", "nsamp", "betaT", "MLE_betaT1",
                    "MLE_betaT2", "MLE_alpha")
 tab.PMLE = tab %>% filter(betaT == "(1,0.5)") %>% 
   select(TrueFam, tau, nsamp, betaT, para, PMLE) %>%
-  spread(key = "para", value = "PMLE") %>%
+  tidyr::spread(key = "para", value = "PMLE") %>%
   select(- TrueFam, - tau, - nsamp, - betaT)
 colnames(tab.PMLE) = c("PMLE_betaT1",
                    "PMLE_betaT2", "PMLE_alpha")
@@ -65,12 +65,12 @@ tab1 = cbind(tab.MLE, tab.PMLE) %>%
          MLE_betaT2, PMLE_betaT2, MLE_alpha, PMLE_alpha) 
 tab.MLE = tab %>% filter(betaT == "(1,1)") %>% 
   select(TrueFam, tau, nsamp, betaT, para, MLE) %>%
-  spread(key = "para", value = "MLE")
+  tidyr::spread(key = "para", value = "MLE")
 colnames(tab.MLE) = c("TrueFam", "tau", "nsamp", "betaT", "MLE_betaT1",
                       "MLE_betaT2", "MLE_alpha")
 tab.PMLE = tab %>% filter(betaT == "(1,1)") %>% 
   select(TrueFam, tau, nsamp, betaT, para, PMLE) %>%
-  spread(key = "para", value = "PMLE") %>%
+  tidyr::spread(key = "para", value = "PMLE") %>%
   select(- TrueFam, - tau, - nsamp, - betaT)
 colnames(tab.PMLE) = c("PMLE_betaT1",
                        "PMLE_betaT2", "PMLE_alpha")
@@ -94,17 +94,17 @@ tab = summary.all %>%
   ) 
 tab.gumbel = tab %>% filter(TrueFam == "Gumbel") %>%
   select(TrueFam, para, method, setting, BIAS, ESD, MSE) %>%
-  gather(BIAS, ESD, MSE, key = "type", value = "value") %>%
+  tidyr::gather(BIAS, ESD, MSE, key = "type", value = "value") %>%
   arrange(para, method, type, setting) %>%
   mutate(type = paste0(type, "_", setting)) %>% select(- setting) %>%
-  spread(key = "type", value = "value") %>%
+  tidyr::spread(key = "type", value = "value") %>%
   select(TrueFam, para, method, BIAS_GC, BIAS_GG, ESD_GC, ESD_GG, MSE_GC, MSE_GG)
 tab.clayton = tab %>% filter(TrueFam == "Clayton") %>%
   select(TrueFam, para, method, setting, BIAS, ESD, MSE) %>%
-  gather(BIAS, ESD, MSE, key = "type", value = "value") %>%
+  tidyr::gather(BIAS, ESD, MSE, key = "type", value = "value") %>%
   arrange(para, method, type, setting) %>%
   mutate(type = paste0(type, "_", setting)) %>% select(- setting) %>%
-  spread(key = "type", value = "value") %>%
+  tidyr::spread(key = "type", value = "value") %>%
   select(TrueFam, para, method, BIAS_CG, BIAS_CC, ESD_CG, ESD_CC, MSE_CG, MSE_CC)
 tab = cbind(tab.gumbel, tab.clayton)
 write.csv(tab, "Tables/tab4_StudyII.csv", row.names = F)
