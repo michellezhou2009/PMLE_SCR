@@ -1,68 +1,50 @@
-# theta does not include copula parameters
-lln.fun1 <- function(copula.para, theta, thetaD = NULL, Xi, Ci, deltaT, deltaD, 
-                     Zmat.T, Zmat.D, copula.index, 
-                     Gfun = list(T = "PH", D = "PH")){
-  N = length(Xi); n.theta = length(theta)
-  n.bT = ncol(Zmat.T); n.bD = ncol(Zmat.D)
-  tk = sort(unique(Xi[deltaT == 1])); n.tk = length(unique(tk))
-  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) 
-  copula.para = copula.para;
-  betaT = theta[ c(1 : n.bT)]; dLambdaT = theta[n.bT + c(1 : n.tk)]
-  if (is.null(thetaD)){
-    betaD = theta[n.bT + n.tk + c(1 : n.bD)]
-    dLambdaD = theta[ n.bT + n.tk + n.bD + c(1 : n.dk)]
-  } else {
-    betaD = thetaD[c(1 : n.bD)]
-    dLambdaD = thetaD[n.bD + c(1 : n.dk)]
-  }
-  if (any(dLambdaT < 0) | any(dLambdaD < 0)) ll = - Inf else {
-    G.all = G.funs(Gfun$T)
-    gT.fun = G.all$g.fun; dgT.fun = G.all$dg.fun; ddgT.fun = G.all$ddg.fun
-    dddgT.fun = G.all$dddg.fun
-    G.all = G.funs(Gfun$D)
-    gD.fun = G.all$g.fun; dgD.fun = G.all$dg.fun; ddgD.fun = G.all$ddg.fun
-    dddgD.fun = G.all$dddg.fun
-    
-    LambdaT.Xi = sum.I(Xi, ">=", tk, dLambdaT)
-    LambdaD.Ci = sum.I(Ci, ">=", dk, dLambdaD)
-    bZ.T = as.vector(Zmat.T %*% betaT); ebZ.T = exp(bZ.T)
-    bZ.D = as.vector(Zmat.D %*% betaD); ebZ.D = exp(bZ.D) 
-    S.Xi = exp(- gT.fun(LambdaT.Xi * ebZ.T))
-    S.Ci = exp(- gD.fun(LambdaD.Ci * ebZ.D))
-    if (copula.index == 4) { # gumbel
-      S.Xi[S.Xi == 1] = exp(- 1 / N)
-      S.Ci[S.Ci == 1] = exp(- 1 / N)
-    }
-    log.dLambda.Xi = log.dLambda.Ci = rep(0, N); 
-    log.dLambda.Xi[deltaT == 1] = log(dLambdaT[match(Xi[deltaT == 1], tk)])
-    log.dLambda.Ci[deltaD == 1] = log(dLambdaD[match(Ci[deltaD == 1], dk)])
-    ll = funsData(ll_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci,
-                  copula.index = copula.index, para = copula.para) + 
-      deltaT * (- gT.fun(LambdaT.Xi * ebZ.T) + 
-                  log(dgT.fun(LambdaT.Xi * ebZ.T)) + bZ.T + log.dLambda.Xi) +
-      deltaD * (- gD.fun(LambdaD.Ci * ebZ.D) +
-                  log(dgD.fun(LambdaD.Ci * ebZ.D))+ bZ.D + log.dLambda.Ci) 
-   sum(ll, na.rm = T) / N 
-  }
-}
-# theta includes copula parameter
-lln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD, 
+lln.fun <- function(theta, thetaT = NULL, thetaD = NULL, 
+                    Xi, Ci, deltaT, deltaD, 
                     Zmat.T, Zmat.D, copula.index, 
-                    Gfun = list(T = "PH", D = "PH")){
+                    Gfun = list(T = "PH", D = "PH"),
+                    copula.link = 
+                      list(
+                        h.fun = function(x) {x}, 
+                        dot.h.fun = function(x) {rep(1, length(x))},
+                        ddot.h.fun = function(x) {rep(0, length(x))}), 
+                    Wmat = NULL, 
+                    control = list(copula.lwr = 0, copula.upr = 28)){
   N = length(Xi); n.theta = length(theta)
   n.bT = ncol(Zmat.T); n.bD = ncol(Zmat.D)
   tk = sort(unique(Xi[deltaT == 1])); n.tk = length(unique(tk))
   dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) 
-  copula.para = theta[1];
-  betaT = theta[1 + c(1 : n.bT)]; dLambdaT = theta[1 + n.bT + c(1 : n.tk)]
+
+  h.fun = copula.link$h.fun
+  dot.h.fun = copula.link$dot.h.fun
+  ddot.h.fun = copula.link$ddot.h.fun
+  copula.lwr = control$copula.lwr; copula.upr = control$copula.upr
+  if (is.null(Wmat)) Wmat = matrix(1, ncol = 1, nrow = N)
+  n.para = ncol(Wmat); copula.para = theta[1 : n.para]
+  copula.lp = as.vector(Wmat %*% matrix(copula.para, byrow = F, ncol = 1))
+  copula.para = h.fun(copula.lp)
+  theta = theta[- c(1 : n.para)]
+  if (is.null(thetaT)){
+    betaT = theta[c(1 : n.bT)]; 
+    dLambdaT = theta[n.bT + c(1 : n.tk)]  
+    theta = theta[- c(1 : (n.bT + n.tk))]
+  } else {
+    betaT = thetaT[c(1 : n.bT)]
+    dLambdaT = thetaT[n.bT + c(1 : n.tk)]
+  }
   if (is.null(thetaD)){
-    betaD = theta[1 + n.bT + n.tk + c(1 : n.bD)]
-    dLambdaD = theta[1 + n.bT + n.tk + n.bD + c(1 : n.dk)]
+    betaD = theta[c(1 : n.bD)]
+    dLambdaD = theta[n.bD + c(1 : n.dk)]
   } else {
     betaD = thetaD[c(1 : n.bD)]
     dLambdaD = thetaD[n.bD + c(1 : n.dk)]
   }
-  if (any(dLambdaT < 0) | any(dLambdaD < 0)) ll = - Inf else {
+  
+  yes.constraint = any(dLambdaT < 0) | 
+    any(dLambdaD < 0) | 
+    min(copula.para) < copula.lwr | 
+    max(copula.para) > copula.upr
+
+  if (yes.constraint) ll = - Inf else {
     G.all = G.funs(Gfun$T)
     gT.fun = G.all$g.fun; dgT.fun = G.all$dg.fun; ddgT.fun = G.all$ddg.fun
     dddgT.fun = G.all$dddg.fun
@@ -93,24 +75,52 @@ lln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
   }
 }
 
-dll.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD, 
+dll.fun <- function(theta, thetaT = NULL, thetaD = NULL, 
+                    Xi, Ci, deltaT, deltaD, 
                     Zmat.T, Zmat.D, copula.index, 
-                    Gfun = list(T = "PH", D = "PH"), keep = F){
+                    Gfun = list(T = "PH", D = "PH"),
+                    copula.link = 
+                      list(
+                        h.fun = function(x) {x}, 
+                        dot.h.fun = function(x) {rep(1, length(x))},
+                        ddot.h.fun = function(x) {rep(0, length(x))}), 
+                    Wmat = NULL, 
+                    control = list(copula.lwr = 0, copula.upr = 28)){
   N = length(Xi); n.theta = length(theta)
   n.bT = ncol(Zmat.T); n.bD = ncol(Zmat.D)
   tk = sort(unique(Xi[deltaT == 1])); n.tk = length(unique(tk))
-  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) # sakie
-  copula.para = theta[1];
-  betaT = theta[1 + c(1 : n.bT)]; dLambdaT = theta[1 + n.bT + c(1 : n.tk)]
+  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) 
+  
+  h.fun = copula.link$h.fun
+  dot.h.fun = copula.link$dot.h.fun
+  ddot.h.fun = copula.link$ddot.h.fun
+  copula.lwr = control$copula.lwr; copula.upr = control$copula.upr
+  if (is.null(Wmat)) Wmat = matrix(1, ncol = 1, nrow = N)
+  n.para = ncol(Wmat); copula.para = theta[1 : n.para]
+  copula.lp = as.vector(Wmat %*% matrix(copula.para, byrow = F, ncol = 1))
+  copula.para = h.fun(copula.lp)
+  theta = theta[- c(1 : n.para)]
+  if (is.null(thetaT)){
+    betaT = theta[c(1 : n.bT)]; 
+    dLambdaT = theta[n.bT + c(1 : n.tk)]  
+    theta = theta[- c(1 : (n.bT + n.tk))]
+  } else {
+    betaT = thetaT[c(1 : n.bT)]
+    dLambdaT = thetaT[n.bT + c(1 : n.tk)]
+  }
   if (is.null(thetaD)){
-    betaD = theta[1 + n.bT + n.tk + c(1 : n.bD)]
-    dLambdaD = theta[1 + n.bT + n.tk + n.bD + c(1 : n.dk)]
+    betaD = theta[c(1 : n.bD)]
+    dLambdaD = theta[n.bD + c(1 : n.dk)]
   } else {
     betaD = thetaD[c(1 : n.bD)]
     dLambdaD = thetaD[n.bD + c(1 : n.dk)]
   }
-
-  if (any(dLambdaT < 0) | any(dLambdaD < 0))
+  
+  yes.constraint = any(dLambdaT < 0) | 
+    any(dLambdaD < 0) | 
+    min(copula.para) < copula.lwr | 
+    max(copula.para) > copula.upr
+  if (yes.constraint)
     return(NA) else{
       G.all = G.funs(Gfun$T)
       gT.fun = G.all$g.fun; dgT.fun = G.all$dg.fun; ddgT.fun = G.all$ddg.fun
@@ -118,7 +128,7 @@ dll.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
       G.all = G.funs(Gfun$D)
       gD.fun = G.all$g.fun; dgD.fun = G.all$dg.fun; ddgD.fun = G.all$ddg.fun
       dddgD.fun = G.all$dddg.fun
-
+      
       LambdaT.Xi = sum.I(Xi, ">=", tk, dLambdaT)
       LambdaD.Ci = sum.I(Ci, ">=", dk, dLambdaD)
       bZ.T = as.vector(Zmat.T %*% betaT); ebZ.T = exp(bZ.T)
@@ -131,26 +141,33 @@ dll.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
       }
       Xi.g.tk = 1 * (Xi >= matrix(tk, byrow = T, nrow = N, ncol = n.tk))
       dN.tk = 1*(Xi == matrix(tk, byrow = T, nrow = N, ncol = n.tk)) * deltaT
-
-      dll.u1 = funsData(
-        Funs = dll.u1_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci,
-        copula.index = copula.index, para = copula.para)
+      
       dll.para = funsData(
         Funs = dll.para_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci,
         copula.index = copula.index, para = copula.para)
-      dll.betaT =
-        (- dll.u1 * S.Xi * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) -
-           deltaT * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) +
-           deltaT * LambdaT.Xi * ebZ.T * ddgT.fun(LambdaT.Xi * ebZ.T) /
-           dgT.fun(LambdaT.Xi * ebZ.T) + deltaT
-        ) * Zmat.T
-      dll.dLambdaT =
-        - dll.u1 * S.Xi  * ebZ.T * Xi.g.tk * dgT.fun(LambdaT.Xi * ebZ.T) -
-        deltaT * ebZ.T * Xi.g.tk * dgT.fun(LambdaT.Xi * ebZ.T) +
-        deltaT * ebZ.T * Xi.g.tk * ddgT.fun(LambdaT.Xi * ebZ.T) /
-        dgT.fun(LambdaT.Xi * ebZ.T) +
-        dN.tk / matrix(dLambdaT, byrow = T, nrow = N, ncol = n.tk)
-      out = cbind(dll.para, dll.betaT, dll.dLambdaT)
+      dll.para = dll.para * dot.h.fun(copula.lp) * Wmat
+      # if (n.para == 1) dll.para = matrix(dll.para, byrow = F, ncol = 1)
+      out = dll.para  
+      if (is.null(thetaT)){
+        dll.u1 = funsData(
+          Funs = dll.u1_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci,
+          copula.index = copula.index, para = copula.para)
+        
+        dll.betaT =
+          (- dll.u1 * S.Xi * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) -
+             deltaT * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) +
+             deltaT * LambdaT.Xi * ebZ.T * ddgT.fun(LambdaT.Xi * ebZ.T) /
+             dgT.fun(LambdaT.Xi * ebZ.T) + deltaT
+          ) * Zmat.T
+        dll.dLambdaT =
+          - dll.u1 * S.Xi  * ebZ.T * Xi.g.tk * dgT.fun(LambdaT.Xi * ebZ.T) -
+          deltaT * ebZ.T * Xi.g.tk * dgT.fun(LambdaT.Xi * ebZ.T) +
+          deltaT * ebZ.T * Xi.g.tk * ddgT.fun(LambdaT.Xi * ebZ.T) /
+          dgT.fun(LambdaT.Xi * ebZ.T) +
+          dN.tk / matrix(dLambdaT, byrow = T, nrow = N, ncol = n.tk)
+        out = cbind(out, dll.betaT, dll.dLambdaT)
+      }
+      
       if (is.null(thetaD)){
         Ci.g.dk = 1 * (Ci >= matrix(dk, byrow = T, nrow = N, ncol = n.dk))
         dN.dk = 1*(Ci == matrix(dk, byrow = T, nrow = N, ncol = n.dk)) * deltaD
@@ -170,39 +187,80 @@ dll.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
              dgD.fun(LambdaD.Ci * ebZ.D) + deltaD) * Zmat.D
         out = cbind(out, dll.betaD, dll.dLambdaD)
       }
-      if (!keep) out = out[complete.cases(out), ] else out 
+      #if (!keep) out = out[complete.cases(out), ] else out 
       return(out)
     }
 }
 
-dlln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD, 
+dlln.fun <- function(theta, thetaT = NULL, thetaD = NULL, 
+                     Xi, Ci, deltaT, deltaD, 
                      Zmat.T, Zmat.D, copula.index, 
-                     Gfun = list(T = "PH", D = "PH")){
-  dll = dll.fun(theta, thetaD, Xi, Ci, deltaT, deltaD, 
+                     Gfun = list(T = "PH", D = "PH"),
+                     copula.link = 
+                       list(
+                         h.fun = function(x) {x}, 
+                         dot.h.fun = function(x) {rep(1, length(x))},
+                         ddot.h.fun = function(x) {rep(0, length(x))}), 
+                     Wmat = NULL, 
+                     control = list(copula.lwr = 0, copula.upr = 28)){
+  
+  dll = dll.fun(theta, thetaT, thetaD, Xi, Ci, deltaT, deltaD, 
                 Zmat.T, Zmat.D, copula.index, 
-                Gfun = Gfun)
+                Gfun = Gfun, copula.link = copula.link, 
+                Wmat = Wmat, control = control)
   if (any(is.na(dll))) return(rep(-Inf, length(theta))) else
     return(apply(dll, 2, mean, na.rm = T))
 }
 
-ddlln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD, 
+ddlln.fun <- function(theta, thetaT = NULL, thetaD = NULL, 
+                      Xi, Ci, deltaT, deltaD, 
                       Zmat.T, Zmat.D, copula.index, 
-                      Gfun = list(T = "PH", D = "PH")){
+                      Gfun = list(T = "PH", D = "PH"),
+                      copula.link = 
+                        list(
+                          h.fun = function(x) {x}, 
+                          dot.h.fun = function(x) {rep(1, length(x))},
+                          ddot.h.fun = function(x) {rep(0, length(x))}), 
+                      Wmat = NULL, 
+                      control = list(copula.lwr = 0, copula.upr = 28)){
   N = length(Xi); n.theta = length(theta)
   n.bT = ncol(Zmat.T); n.bD = ncol(Zmat.D)
   tk = sort(unique(Xi[deltaT == 1])); n.tk = length(unique(tk))
-  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) # sakie
-  copula.para = theta[1];
-  betaT = theta[1 + c(1 : n.bT)]; dLambdaT = theta[1 + n.bT + c(1 : n.tk)]
+  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) 
+  
+  h.fun = copula.link$h.fun
+  dot.h.fun = copula.link$dot.h.fun
+  ddot.h.fun = copula.link$ddot.h.fun
+  copula.lwr = control$copula.lwr; copula.upr = control$copula.upr
+  if (is.null(Wmat)) Wmat = matrix(1, ncol = 1, nrow = N)
+  n.para = ncol(Wmat); copula.para = theta[1 : n.para]
+  copula.lp = as.vector(Wmat %*% matrix(copula.para, byrow = F, ncol = 1))
+  copula.para = h.fun(copula.lp)
+  theta = theta[- c(1 : n.para)]
+  if (is.null(thetaT)){
+    betaT = theta[c(1 : n.bT)]; 
+    dLambdaT = theta[n.bT + c(1 : n.tk)]  
+    theta = theta[- c(1 : (n.bT + n.tk))]
+  } else {
+    betaT = thetaT[c(1 : n.bT)]
+    dLambdaT = thetaT[n.bT + c(1 : n.tk)]
+  }
   if (is.null(thetaD)){
-    betaD = theta[1 + n.bT + n.tk + c(1 : n.bD)]
-    dLambdaD = theta[1 + n.bT + n.tk + n.bD + c(1 : n.dk)]
+    betaD = theta[c(1 : n.bD)]
+    dLambdaD = theta[n.bD + c(1 : n.dk)]
   } else {
     betaD = thetaD[c(1 : n.bD)]
     dLambdaD = thetaD[n.bD + c(1 : n.dk)]
   }
   
-  if (any(dLambdaT < 0) | any(dLambdaD < 0)) 
+  
+  yes.constraint = any(dLambdaT < 0) | 
+    any(dLambdaD < 0) | 
+    min(copula.para) < copula.lwr | 
+    max(copula.para) > copula.upr
+  
+  
+  if (yes.constraint)
     return(matrix(-Inf, ncol = n.theta, nrow = n.theta)) else{
       G.all = G.funs(Gfun$T)
       gT.fun = G.all$g.fun; dgT.fun = G.all$dg.fun; ddgT.fun = G.all$ddg.fun
@@ -224,82 +282,94 @@ ddlln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
       Xi.g.tk = 1 * (Xi >= matrix(tk, byrow = T, nrow = N, ncol = n.tk)) 
       dN.tk = 1*(Xi == matrix(tk, byrow = T, nrow = N, ncol = n.tk)) * deltaT
       
-      dll.u1 = funsData(
-        Funs = dll.u1_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
-        copula.index = copula.index, para = copula.para) 
       dll.para = funsData(
         Funs = dll.para_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
         copula.index = copula.index, para = copula.para)
-      dll.u1u1 = funsData(
-        Funs = dll.u1u1_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
-        copula.index = copula.index, para = copula.para) 
-      dll.para2 = mean(funsData(
+      dll.para2 = funsData(
         Funs = dll.para2_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
-        copula.index = copula.index, para = copula.para), na.rm = T)
-      dll.u1para = funsData(
-        Funs = dll.u1para_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
-        copula.index = copula.index, para = copula.para) 
-      
-      dll.dLambdaTdLambdaT = crossprod(
-        (dll.u1u1 * S.Xi ^ 2 * ebZ.T ^ 2 * dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 + 
-           dll.u1 * S.Xi * ebZ.T ^ 2 * dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 -
-           dll.u1 * S.Xi * ebZ.T ^ 2 * ddgT.fun(LambdaT.Xi * ebZ.T) -
-           deltaT * ebZ.T ^ 2 * ddgT.fun(LambdaT.Xi * ebZ.T) +
-           deltaT * ebZ.T ^ 2 * 
-           (dddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T) - 
-              (ddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T)) ^ 2
-           )) * 
-          Xi.g.tk,  Xi.g.tk) / N - diag(apply(dN.tk, 2, mean) / dLambdaT ^ 2)
-      
-      dll.betaTbetaT = crossprod(
-        (dll.u1u1 * S.Xi ^ 2 * LambdaT.Xi ^ 2 * ebZ.T ^ 2 * 
-           dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 +
-           dll.u1 * S.Xi * LambdaT.Xi ^ 2 * ebZ.T ^ 2 * 
-           dgT.fun(LambdaT.Xi * ebZ.T) ^ 2  -
-           dll.u1 * S.Xi * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) - 
-           dll.u1 * S.Xi * LambdaT.Xi ^2  * ebZ.T ^2 * 
-           ddgT.fun(LambdaT.Xi * ebZ.T) -
-           deltaT * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) - 
-           deltaT * LambdaT.Xi ^2  * ebZ.T ^2  * 
-           ddgT.fun(LambdaT.Xi * ebZ.T) +
-           deltaT * LambdaT.Xi * ebZ.T * ddgT.fun(LambdaT.Xi * ebZ.T) /
-           dgT.fun(LambdaT.Xi * ebZ.T) +
-           deltaT * LambdaT.Xi ^ 2 * ebZ.T ^ 2 * 
-           (dddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T) - 
-              (ddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T)) ^ 2
-           )) * Zmat.T, Zmat.T
-      ) / N
-      
-      dll.dLambdaTbetaT = crossprod(
-        (dll.u1u1 * S.Xi ^ 2 * ebZ.T ^ 2 * LambdaT.Xi * 
-           dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 + 
-           dll.u1 * S.Xi * ebZ.T ^ 2 * LambdaT.Xi * 
-           dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 - 
-           dll.u1 * S.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) -
-           dll.u1 * S.Xi * ebZ.T ^ 2 * LambdaT.Xi * 
-           ddgT.fun(LambdaT.Xi * ebZ.T)  - 
-           deltaT * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) - 
-           deltaT * ebZ.T ^ 2 * LambdaT.Xi * ddgT.fun(LambdaT.Xi * ebZ.T) + 
-           deltaT * ebZ.T * ddgT.fun(LambdaT.Xi * ebZ.T) /
-           dgT.fun(LambdaT.Xi * ebZ.T) +
-           deltaT * ebZ.T ^ 2 *  LambdaT.Xi * 
-           (dddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T) - 
-              (ddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T)) ^ 2
-           )) * Xi.g.tk, Zmat.T) / N
-      
-      dll.dLambdaTpara = apply(- dll.u1para * S.Xi * ebZ.T * Xi.g.tk * 
-                                 dgT.fun(LambdaT.Xi * ebZ.T), 2, mean, na.rm = T)
-      
-      dll.betaTpara = apply(
-        - dll.u1para * S.Xi * ebZ.T * LambdaT.Xi * Zmat.T * 
-          dgT.fun(LambdaT.Xi * ebZ.T), 2, mean, na.rm = T)
-      
-      out = rbind(
-        c(dll.para2, dll.betaTpara, dll.dLambdaTpara),
-        cbind(dll.betaTpara, dll.betaTbetaT, t(dll.dLambdaTbetaT)),
-        cbind(dll.dLambdaTpara, dll.dLambdaTbetaT, dll.dLambdaTdLambdaT)
-      )
-      
+        copula.index = copula.index, para = copula.para)
+      dll.para2 = matrix(
+          apply((dll.para2 * (dot.h.fun(copula.lp) ^ 2) + 
+                  dll.para * ddot.h.fun(copula.lp)) * 
+                  Wmat[, rep(1 : n.para, n.para), drop = F] * 
+                  Wmat[, rep(1 : n.para, each = n.para), drop = F], 
+                2, mean, na.rm = T),
+          byrow = T, nrow = n.para, ncol = n.para)
+      out = dll.para2
+      if (is.null(thetaT)){
+        dll.u1 = funsData(
+          Funs = dll.u1_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
+          copula.index = copula.index, para = copula.para) 
+        dll.u1u1 = funsData(
+          Funs = dll.u1u1_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
+          copula.index = copula.index, para = copula.para) 
+        dll.dLambdaTdLambdaT = crossprod(
+          (dll.u1u1 * S.Xi ^ 2 * ebZ.T ^ 2 * dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 + 
+             dll.u1 * S.Xi * ebZ.T ^ 2 * dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 -
+             dll.u1 * S.Xi * ebZ.T ^ 2 * ddgT.fun(LambdaT.Xi * ebZ.T) -
+             deltaT * ebZ.T ^ 2 * ddgT.fun(LambdaT.Xi * ebZ.T) +
+             deltaT * ebZ.T ^ 2 * 
+             (dddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T) - 
+                (ddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T)) ^ 2
+             )) * 
+            Xi.g.tk,  Xi.g.tk) / N - diag(apply(dN.tk, 2, mean) / dLambdaT ^ 2)
+        dll.betaTbetaT = crossprod(
+          (dll.u1u1 * S.Xi ^ 2 * LambdaT.Xi ^ 2 * ebZ.T ^ 2 * 
+             dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 +
+             dll.u1 * S.Xi * LambdaT.Xi ^ 2 * ebZ.T ^ 2 * 
+             dgT.fun(LambdaT.Xi * ebZ.T) ^ 2  -
+             dll.u1 * S.Xi * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) - 
+             dll.u1 * S.Xi * LambdaT.Xi ^2  * ebZ.T ^2 * 
+             ddgT.fun(LambdaT.Xi * ebZ.T) -
+             deltaT * LambdaT.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) - 
+             deltaT * LambdaT.Xi ^2  * ebZ.T ^2  * 
+             ddgT.fun(LambdaT.Xi * ebZ.T) +
+             deltaT * LambdaT.Xi * ebZ.T * ddgT.fun(LambdaT.Xi * ebZ.T) /
+             dgT.fun(LambdaT.Xi * ebZ.T) +
+             deltaT * LambdaT.Xi ^ 2 * ebZ.T ^ 2 * 
+             (dddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T) - 
+                (ddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T)) ^ 2
+             )) * Zmat.T, Zmat.T
+        ) / N
+        dll.dLambdaTbetaT = crossprod(
+          (dll.u1u1 * S.Xi ^ 2 * ebZ.T ^ 2 * LambdaT.Xi * 
+             dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 + 
+             dll.u1 * S.Xi * ebZ.T ^ 2 * LambdaT.Xi * 
+             dgT.fun(LambdaT.Xi * ebZ.T) ^ 2 - 
+             dll.u1 * S.Xi * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) -
+             dll.u1 * S.Xi * ebZ.T ^ 2 * LambdaT.Xi * 
+             ddgT.fun(LambdaT.Xi * ebZ.T)  - 
+             deltaT * ebZ.T * dgT.fun(LambdaT.Xi * ebZ.T) - 
+             deltaT * ebZ.T ^ 2 * LambdaT.Xi * ddgT.fun(LambdaT.Xi * ebZ.T) + 
+             deltaT * ebZ.T * ddgT.fun(LambdaT.Xi * ebZ.T) /
+             dgT.fun(LambdaT.Xi * ebZ.T) +
+             deltaT * ebZ.T ^ 2 *  LambdaT.Xi * 
+             (dddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T) - 
+                (ddgT.fun(LambdaT.Xi * ebZ.T) / dgT.fun(LambdaT.Xi * ebZ.T)) ^ 2
+             )) * Xi.g.tk, Zmat.T) / N
+        dll.u1para = funsData(
+          Funs = dll.u1para_funs, d1 = deltaT, d2 = deltaD, u1 = S.Xi, u2 = S.Ci, 
+          copula.index = copula.index, para = copula.para) 
+        dll.dLambdaTpara = - dll.u1para * S.Xi * ebZ.T * Xi.g.tk * 
+          dgT.fun(LambdaT.Xi * ebZ.T)
+        dll.betaTpara = - dll.u1para * S.Xi * ebZ.T * LambdaT.Xi * Zmat.T * 
+          dgT.fun(LambdaT.Xi * ebZ.T)
+        dll.dLambdaTpara = matrix(
+            apply(dll.dLambdaTpara[, rep(1 : n.tk, n.para)] *
+                    dot.h.fun(copula.lp) * Wmat[, rep(1 : n.para, each = n.tk)],
+                  2, mean, na.rm = T),
+            byrow = T, ncol = n.tk, nrow = n.para) 
+          dll.betaTpara = matrix(
+            apply(dll.betaTpara[, rep(1 : n.bT, n.para)] * 
+                    dot.h.fun(copula.lp) * Wmat[, rep(1 : n.para, each = n.bT)],
+                  2, mean, na.rm = T),
+            byrow = T, ncol = n.bT, nrow = n.para)
+        out = rbind(
+          cbind(out, dll.betaTpara, dll.dLambdaTpara),
+          cbind(t(dll.betaTpara), dll.betaTbetaT, t(dll.dLambdaTbetaT)),
+          cbind(t(dll.dLambdaTpara), dll.dLambdaTbetaT, dll.dLambdaTdLambdaT)
+        )
+      }
       if (is.null(thetaD)){
         Ci.g.dk = 1 * (Ci >= matrix(dk, byrow = T, nrow = N, ncol = n.dk)) 
         dN.dk = 1*(Ci == matrix(dk, byrow = T, nrow = N, ncol = n.dk)) * deltaD
@@ -363,14 +433,6 @@ ddlln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
                 (ddgD.fun(LambdaD.Ci * ebZ.D) / dgD.fun(LambdaD.Ci * ebZ.D)) ^ 2
              )) * Ci.g.dk, Zmat.D) / N
         
-        dll.dLambdaDpara = apply(
-          - dll.u2para * S.Ci * ebZ.D * Ci.g.dk * dgD.fun(LambdaD.Ci * ebZ.D), 
-          2, mean, na.rm = T)
-        
-        dll.betaDpara = apply(
-          - dll.u2para * S.Ci * ebZ.D * LambdaD.Ci * 
-            dgD.fun(LambdaD.Ci * ebZ.D) * Zmat.D, 2, mean, na.rm = T) 
-        
         dll.dLambdaTdLambdaD = crossprod(
           dll.u1u2 * S.Xi * S.Ci * ebZ.T * ebZ.D *
             dgT.fun(LambdaT.Xi * ebZ.T) * dgD.fun(LambdaD.Ci * ebZ.D) *
@@ -392,33 +454,70 @@ ddlln.fun <- function(theta, thetaD = NULL, Xi, Ci, deltaT, deltaD,
             dgD.fun(LambdaD.Ci * ebZ.D) * 
             Zmat.T, Zmat.D) / N
         
+        dll.dLambdaDpara = 
+          - dll.u2para * S.Ci * ebZ.D * Ci.g.dk * dgD.fun(LambdaD.Ci * ebZ.D)
+        
+        dll.betaDpara = 
+          - dll.u2para * S.Ci * ebZ.D * LambdaD.Ci * 
+          dgD.fun(LambdaD.Ci * ebZ.D) * Zmat.D 
+        
+      
+          dll.dLambdaDpara = matrix(
+            apply(dll.dLambdaDpara[, rep(1 : n.dk, n.para)] * 
+                    dot.h.fun(copula.lp) * Wmat[, rep(1 : n.para, each = n.dk)],
+                  2, mean, na.rm = T), byrow = T, nrow = n.para, ncol = n.dk)
+          dll.betaDpara = matrix(
+            apply(dll.betaDpara[, rep(1 : n.bD, n.para)] * 
+                    dot.h.fun(copula.lp) * Wmat[, rep(1 : n.para, each = n.bD)], 
+                  2, mean, na.rm = T), byrow = T, nrow = n.para, ncol = n.bD)
+        
         out22 = rbind(
           cbind(dll.betaDbetaD, t(dll.dLambdaDbetaD)),
           cbind(dll.dLambdaDbetaD, dll.dLambdaDdLambdaD)
         )
         out12 = rbind(
-          c(dll.betaDpara, dll.dLambdaDpara),
+          cbind(dll.betaDpara, dll.dLambdaDpara),
           cbind(dll.betaTbetaD, t(dll.dLambdaDbetaT)),
           cbind(dll.dLambdaTbetaD, dll.dLambdaTdLambdaD)
         )
         out = rbind(cbind(out, out12), cbind(t(out12), out22))
       }
-      out = out[complete.cases(out),] # sakie
       return(out)
     }
 }
 
 ddll.fun2 <- function(theta, thetaD, Xi, Ci, deltaT, deltaD, 
                       Zmat.T, Zmat.D, copula.index, 
-                      Gfun = list(T = "PH", D = "PH")){
+                      Gfun = list(T = "PH", D = "PH"),
+                      copula.link = 
+                        list(
+                          h.fun = function(x) {x}, 
+                          dot.h.fun = function(x) {rep(1, length(x))},
+                          ddot.h.fun = function(x) {rep(0, length(x))}), 
+                      Wmat = NULL, 
+                      control = list(copula.lwr = 0, copula.upr = 28)){
   N = length(Xi); n.theta = length(theta)
   n.bT = ncol(Zmat.T); n.bD = ncol(Zmat.D)
   tk = sort(unique(Xi[deltaT == 1])); n.tk = length(unique(tk))
-  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) # sakie
-  copula.para = theta[1];
-  betaT = theta[1 + c(1 : n.bT)]; dLambdaT = theta[1 + n.bT + c(1 : n.tk)]
+  dk = sort(unique(Ci[deltaD == 1])); n.dk = length(unique(dk)) 
+  
+  h.fun = copula.link$h.fun
+  dot.h.fun = copula.link$dot.h.fun
+  ddot.h.fun = copula.link$ddot.h.fun
+  copula.lwr = control$copula.lwr; copula.upr = control$copula.upr
+  if (is.null(Wmat)) Wmat = matrix(1, ncol = 1, nrow = N)
+  n.para = ncol(Wmat); copula.para = theta[1 : n.para]
+  copula.lp = as.vector(Wmat %*% matrix(copula.para, byrow = F, ncol = 1))
+  copula.para = h.fun(copula.lp)
+  theta = theta[- c(1 : n.para)]
+  
+  betaT = theta[c(1 : n.bT)]; 
+  dLambdaT = theta[n.bT + c(1 : n.tk)]  
+  theta = theta[- c(1 : (n.bT + n.tk))]
+
   betaD = thetaD[c(1 : n.bD)]
   dLambdaD = thetaD[n.bD + c(1 : n.dk)]
+
   G.all = G.funs(Gfun$T)
   gT.fun = G.all$g.fun; dgT.fun = G.all$dg.fun; ddgT.fun = G.all$ddg.fun
   dddgT.fun = G.all$dddg.fun
@@ -449,6 +548,8 @@ ddll.fun2 <- function(theta, thetaD, Xi, Ci, deltaT, deltaD,
     dgT.fun(LambdaT.Xi * ebZ.T) * Zmat.T
   dll.dLambdaTu2 = - dll.u1u2 * S.Xi  * ebZ.T * Xi.g.tk * 
     dgT.fun(LambdaT.Xi * ebZ.T) 
+  
+  dll.u2para = dll.u2para * dot.h.fun(copula.lp) * Wmat
   out = cbind(dll.u2para, dll.betaTu2, dll.dLambdaTu2)
   return(out)
   

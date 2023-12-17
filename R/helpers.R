@@ -383,10 +383,13 @@ funsData <- function(Funs, d1, d2, u1, u2, copula.index, para){
   grp = d1 + 2 * d2 + 1
   out = lapply(1:4, function(k){
     index = which(grp == k) 
-    if (sum(index) == 0) return(NULL) else{
-      data.frame(
-        index = index,
-        ll = funs[[k]](u1 = u1[index], u2 = u2[index], para = para))
+    if (sum(index) == 0) return(NULL) else {
+      if (length(para) == 1) {
+        ll = funs[[k]](u1 = u1[index], u2 = u2[index], para = para)
+      } else {
+        ll = funs[[k]](u1 = u1[index], u2 = u2[index], para = para[index])
+      }
+      data.frame(index = index, ll = ll)
     }
   }) %>% do.call(rbind, .)
   out = out %>% arrange(index, )
